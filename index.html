@@ -165,7 +165,7 @@
     <h2>Output</h2>
     <button onclick="downloadTxt()" id="downloadBtn">Download</button>
     <button onclick="copyToClipboard()" id="copyBtn">Copy to Clipboard</button>
-    <pre id="output" class="markdown-body"></pre>
+    <pre id="output"></pre>
   </div>
 
   <script>
@@ -209,13 +209,14 @@
       const filesData = await filesResponse.json();
 
       const commentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`, { headers });
-      const commentsData = await commentsResponse.json();
+      const prCommentsData = await commentsResponse.json();
 
       const reviewCommentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { headers });
       const reviewCommentsData = await reviewCommentsResponse.json();
+      const commentsData = [...prCommentsData, ...reviewCommentsData];
 
       const reviewersSet = new Set([prData.user.login]);
-      commentsData.concat(reviewCommentsData).forEach(c => reviewersSet.add(c.user.login));
+      commentsData.forEach(c => reviewersSet.add(c.user.login));
 
       return {
         owner, repo, prNumber, prData, filesData, commentsData, reviewCommentsData, reviewersSet
@@ -305,6 +306,21 @@
 
           result += '\n';
         }
+
+        const nonInlineComments = commentsData.filter(c => !c.path && !c.diff_hunk).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const outerThreads = {};
+        nonInlineComments.forEach(comment => {
+          if (!comment.in_reply_to_id) outerThreads[comment.id] = { comment, replies: [] };
+          else if (outerThreads[comment.in_reply_to_id]) outerThreads[comment.in_reply_to_id].replies.push(comment);
+        });
+
+        Object.values(outerThreads).forEach(({ comment, replies }) => {
+          result += `> Comment by ${comment.user.login} at ${comment.created_at}\n${comment.body}\n\n`;
+          replies.forEach(reply => {
+            const replyIndented = reply.body.split('\n').map(l => '  ' + l).join('\n');
+            result += `  > Reply by ${reply.user.login} at ${reply.created_at}\n${replyIndented}\n\n`;
+          });
+        });
 
         result += '\n' + '-'.repeat(80) + '\n\n';
       }
