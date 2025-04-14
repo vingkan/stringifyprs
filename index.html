@@ -198,8 +198,6 @@
       fetchBtn.textContent = 'Fetch';
     }
 
-    let prNumbersGlobal = [];
-
     async function fetchAndOutputPRs() {
       const tokenEl = document.getElementById('token');
       const accessToken = tokenEl.value.trim();
@@ -208,7 +206,6 @@
       const outputEl = document.getElementById('output');
       let invalidLinks = [];
       let result = '';
-      prNumbersGlobal = [];
 
       const seenPRs = new Set();
       const prInfos = [];
@@ -225,7 +222,6 @@
           if (!seenPRs.has(uniqueKey)) {
             seenPRs.add(uniqueKey);
             prInfos.push({ owner, repo, prNumber });
-            prNumbersGlobal.push(prNumber);
           }
         }
       });
@@ -295,7 +291,7 @@
     function downloadTxt() {
       const text = document.getElementById('output').textContent;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `pull_requests_${prNumbersGlobal.join('_')}_${timestamp}.txt`;
+      const filename = `pull_requests_${timestamp}.txt`;
       const blob = new Blob([text], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
