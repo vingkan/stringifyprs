@@ -178,8 +178,9 @@
       const outputSection = document.getElementById('output-section');
       const outputEl = document.getElementById('output');
 
-      // Before fetch, clear errors:
+      // Before fetch, clear errors and output:
       errorEl.style.display = 'none';
+      outputSection.style.display = 'none';
 
       try {
         await fetchAndOutputPRs();
@@ -196,6 +197,42 @@
       // Restore button after completion
       fetchBtn.disabled = false;
       fetchBtn.textContent = 'Fetch';
+    }
+
+    async function fetchPullRequestData(owner, repo, prNumber, accessToken) {
+      const headers = { Authorization: `token ${accessToken}` };
+
+      const prResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`, { headers });
+      const prData = await prResponse.json();
+
+      const filesResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/files`, { headers });
+      const filesData = await filesResponse.json();
+
+      const commentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`, { headers });
+      const commentsData = await commentsResponse.json();
+
+      const reviewCommentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { headers });
+      const reviewCommentsData = await reviewCommentsResponse.json();
+
+      const reviewersSet = new Set([prData.user.login]);
+      commentsData.concat(reviewCommentsData).forEach(c => reviewersSet.add(c.user.login));
+
+      return {
+        owner, repo, prNumber, prData, filesData, commentsData, reviewCommentsData, reviewersSet
+      };
+    }
+
+    async function fetchPullRequestsInBatches(prInfos, accessToken, batchSize) {
+      const results = [];
+      for (let i = 0; i <= prInfos.length; i += batchSize) {
+        const batch = prInfos.slice(i, i + batchSize);
+        const promises = batch.map(({ owner, repo, prNumber }) => (
+          fetchPullRequestData(owner, repo, prNumber, accessToken)
+        ));
+        const batchData = await Promise.all(promises);
+        batchData.forEach((r) => results.push(r));
+      }
+      return results;
     }
 
     async function fetchAndOutputPRs() {
@@ -238,23 +275,12 @@
         throw new Error('No GitHub access token provded.')
       }
 
-      for (const { owner, repo, prNumber } of prInfos) {
-        const headers = { Authorization: `token ${accessToken}` };
+      const allPullRequestData = await fetchPullRequestsInBatches(prInfos, accessToken, 5);
 
-        const prResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`, { headers });
-        const prData = await prResponse.json();
-
-        const filesResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/files`, { headers });
-        const filesData = await filesResponse.json();
-
-        const commentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`, { headers });
-        const commentsData = await commentsResponse.json();
-
-        const reviewCommentsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/comments`, { headers });
-        const reviewCommentsData = await reviewCommentsResponse.json();
-
-        const reviewersSet = new Set([prData.user.login]);
-        commentsData.concat(reviewCommentsData).forEach(c => reviewersSet.add(c.user.login));
+      for (const fetchedData of allPullRequestData) {
+        const {
+          owner, repo, prNumber, prData, filesData, commentsData, reviewCommentsData, reviewersSet
+        } = fetchedData;
 
         result += `Title: ${prData.title}\nAuthor: ${prData.user.login}\nReviewer(s): ${Array.from(reviewersSet).join(', ')}\n\nDescription:\n${prData.body || 'No description provided.'}\n\n`;
 
